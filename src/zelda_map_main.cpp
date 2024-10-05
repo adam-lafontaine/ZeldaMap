@@ -22,7 +22,7 @@ constexpr u32 MAP_HEIGHT = 8;
 constexpr u32 IMAGE_WIDTH = 256;
 constexpr u32 IMAGE_HEIGHT = 168;
 
-constexpr u32 SCREEN_DOWN_SCALE = 4;
+constexpr u32 SCREEN_DOWN_SCALE = 2;
 
 constexpr f64 NANO = 1'000'000'000;
 
@@ -46,7 +46,7 @@ using FileList = std::unordered_map<fs::path, FileState>;
 
 namespace map
 {
-    static Rect2Du32 get_map_location(img::ImageView const& view)
+    static void write_map(img::ImageView const& src, img::ImageView const& map)
     {
         // mini-map at top of screen
         Rect2Du32 rm{};
@@ -55,32 +55,33 @@ namespace map
         rm.y_begin = 16;
         rm.y_end = rm.y_begin + 32;
 
-        auto vm = img::sub_view(view, rm);
+        auto vm = img::sub_view(src, rm);
 
         u32 x = 0;
         u32 y = 0;
         bool found = false;
-        for (; y < vm.height && !found; y++)
+        for (y = 0; y < vm.height && !found; y++)
         {
             auto row = img::row_begin(vm, y);
-            for (; x < vm.width && !found; x++)
+            for (x = 0; x < vm.width && !found; x++)
             {
                 found = row[x].green > 200;
             }
         }
 
+        if (!found)
+        {
+            return;
+        }
+
         x = (x - 1) / 4;
         y /= 4;
 
-        return img::make_rect(x * IMAGE_WIDTH, y * IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
-    }
+        auto r = img::make_rect(x * IMAGE_WIDTH, y * IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
 
+        auto dst = img::sub_view(map, r);
 
-    static void write_map(img::ImageView const& src, img::ImageView const& map)
-    {
-        auto dst = img::sub_view(map, get_map_location(src));
-
-        auto r = img::make_rect(0, src.height - IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
+        r = img::make_rect(0, src.height - IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
 
         img::copy(img::sub_view(src, r), dst);
     }
@@ -129,7 +130,11 @@ namespace map
                 continue;
             }
 
-            img::read_image_from_file(path.string().c_str(), image);
+            if (!img::read_image_from_file(path.generic_string().c_str(), image))
+            {
+                continue;
+            }
+
             write_map(img::make_view(image), map);
 
             img::destroy_image(image);

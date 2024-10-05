@@ -87,6 +87,23 @@ namespace image
 
 namespace image
 {
+    void copy(SubView const& src, ImageView const& dst)
+    {
+        assert(src.width == dst.width);
+        assert(src.height == dst.height);
+
+        for (u32 y = 0; y < src.height; y++)
+        {
+            auto s = row_begin(src, y);
+            auto d = row_begin(dst, y);
+            for (u32 x = 0; x < src.width; x++)
+            {
+                d[x] = s[x];
+            }
+        }
+    }
+
+
     void copy(SubView const& src, SubView const& dst)
     {
         assert(src.width == dst.width);

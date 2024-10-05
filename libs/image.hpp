@@ -196,6 +196,8 @@ namespace image
 
 namespace image
 {
+    void copy(SubView const& src, ImageView const& dst);
+
     void copy(SubView const& src, SubView const& dst);
 }
 
