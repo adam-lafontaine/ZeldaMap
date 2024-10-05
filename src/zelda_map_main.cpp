@@ -11,10 +11,9 @@
 namespace fs = std::filesystem;
 namespace img = image;
 
-//using FileList = std::vector<fs::path>;
-
 
 constexpr auto WATCH_DIR = "D:\\NES\\fceux\\snaps";
+constexpr auto MAP_SAVE_PATH = "./zelda_map.png";
 
 constexpr u32 MAP_WIDTH = 16;
 constexpr u32 MAP_HEIGHT = 8;
@@ -22,7 +21,7 @@ constexpr u32 MAP_HEIGHT = 8;
 constexpr u32 IMAGE_WIDTH = 256;
 constexpr u32 IMAGE_HEIGHT = 168;
 
-constexpr u32 SCREEN_DOWN_SCALE = 2;
+constexpr u32 SCREEN_DOWN_SCALE = 4;
 
 constexpr f64 NANO = 1'000'000'000;
 
@@ -228,41 +227,34 @@ static void handle_sdl_event(SDL_Event const& event, SDL_Window* window)
                 sdl::print_message("ALT F4");
                 end_program();
                 break;
-
 #ifndef NDEBUG
-
             case SDLK_RETURN:
             case SDLK_KP_ENTER:
                 sdl::print_message("ALT ENTER");
                 sdl::toggle_fullscreen(window);
                 break;
-
-#endif
-
-            
+#endif            
             default:
                 break;
             }
         }
 
+        switch (key_code)
+        {
+        case SDLK_s:
+            img::write_to_file(state.map_view, MAP_SAVE_PATH);
+            break;
 
 #ifndef NDEBUG
+        case SDLK_ESCAPE:
+            sdl::print_message("ESC");
+            end_program();
+            break;
+#endif
 
-        else
-        {
-            switch (key_code)
-            {
-            case SDLK_ESCAPE:
-                sdl::print_message("ESC");
-                end_program();
-                break;
-
-            default:
-                break;
-            }
-        }
-
-#endif           
+        default:
+            break;
+        } 
 
     } break;
         
@@ -281,6 +273,36 @@ static void process_user_input()
 }
 
 
+static bool load_map()
+{
+    if (!fs::exists(MAP_SAVE_PATH))
+    {
+        assert("*** No map ***" && false);
+        return false;
+    }
+
+    if (!img::read_image_from_file(MAP_SAVE_PATH, state.map_image))
+    {
+        assert("*** read failed ***" && false);
+        return false;
+    }
+
+    auto map_w = MAP_WIDTH * IMAGE_WIDTH;
+    auto map_h = MAP_HEIGHT * IMAGE_HEIGHT;
+
+    if (state.map_image.width != map_w || state.map_image.height != map_h)
+    {
+        assert("*** Bad dims ***" && false);
+        img::destroy_image(state.map_image);
+        return false;
+    }
+
+    state.map_view = img::make_view(state.map_image);
+
+    return true;
+}
+
+
 
 static bool main_init()
 {
@@ -290,18 +312,20 @@ static bool main_init()
         sdl::print_message("No image directory");
         return false;
     }
-    
-    state.image_list.reserve(MAP_WIDTH * MAP_HEIGHT);
 
     auto map_w = MAP_WIDTH * IMAGE_WIDTH;
     auto map_h = MAP_HEIGHT * IMAGE_HEIGHT;
 
-    if (!img::create_image(state.map_image, map_w, map_h))
+    if (!load_map())
     {
-        return false;
-    }
+        if (!img::create_image(state.map_image, map_w, map_h))
+        {
+            return false;
+        }
 
-    state.map_view = img::make_view(state.map_image);
+        state.map_view = img::make_view(state.map_image);
+        img::fill(state.map_view, img::to_pixel(0));
+    }
 
     auto screen_w = map_w / SCREEN_DOWN_SCALE;
     auto screen_h = map_h / SCREEN_DOWN_SCALE;
@@ -313,7 +337,7 @@ static bool main_init()
 
     set_window_icon(state.screen);
 
-    img::fill(state.map_view, img::to_pixel(0));
+    
 
     return true;
 }
