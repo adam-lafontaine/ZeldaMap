@@ -12,7 +12,7 @@ namespace fs = std::filesystem;
 namespace img = image;
 
 //using FileList = std::vector<fs::path>;
-using FileList = std::unordered_map<fs::path, int>;
+
 
 constexpr auto WATCH_DIR = "D:\\NES\\fceux\\snaps";
 
@@ -28,6 +28,20 @@ constexpr f64 NANO = 1'000'000'000;
 
 constexpr f64 TARGET_FRAMERATE_HZ = 60.0;
 constexpr f64 TARGET_NS_PER_FRAME = NANO / TARGET_FRAMERATE_HZ;
+
+
+
+
+
+enum class FileState : int
+{
+    New = 0,
+    Existing,
+    Deleted
+};
+
+
+using FileList = std::unordered_map<fs::path, FileState>;
 
 
 namespace map
@@ -62,7 +76,7 @@ namespace map
     }
 
 
-    static void update_map(img::ImageView const& src, img::ImageView const& map)
+    static void write_map(img::ImageView const& src, img::ImageView const& map)
     {
         auto dst = img::sub_view(map, get_map_location(src));
 
@@ -72,10 +86,8 @@ namespace map
     }
 
 
-    static void scan_dir(fs::path const& dir, FileList& image_list)
+    static void update_image_list(fs::path const& dir, FileList& image_list)
     { 
-        static int scan_id = 0;
-
         auto const is_png = [&](fs::path const& entry)
         {
             return fs::is_regular_file(entry) &&
@@ -91,9 +103,9 @@ namespace map
                 continue;
             }
 
-            if (!image_list.contains(entry) || image_list[entry] < 0)
+            if (!image_list.contains(entry) || image_list[entry] == FileState::Deleted)
             {
-                image_list[entry] = scan_id;
+                image_list[entry] = FileState::New;
             }
         }
 
@@ -101,17 +113,27 @@ namespace map
         {
             if (!fs::exists(path))
             {
-                id = -1;
+                id = FileState::Deleted;
+            }
+        }
+    }
+
+
+    static void update_map(FileList const& image_list, img::ImageView const& map)
+    {
+        img::Image image;
+        for (auto const& [path, state] : image_list)
+        {
+            if (state != FileState::New)
+            {
                 continue;
             }
 
-            if (id == scan_id)
-            {
-                //printf("%s\n", path.string().c_str());
-            }
-        }
+            img::read_image_from_file(path.string().c_str(), image);
+            write_map(img::make_view(image), map);
 
-        ++scan_id;
+            img::destroy_image(image);
+        }
     }
 }
 
@@ -308,24 +330,10 @@ static void main_loop()
     {
         process_user_input();
 
-        map::scan_dir(state.watch_dir, state.image_list);
+        map::update_image_list(state.watch_dir, state.image_list);
+        map::update_map(state.image_list, state.map_view);
 
-        int count = 0;
-        for (auto const& [path, id]: state.image_list)
-        {
-            count += id >= 0;
-        }
-
-        switch (count % 2)
-        {
-        case 0:
-            img::fill(state.screen.view, img::to_pixel(255));
-            break;
-
-        default:
-            img::fill(state.screen.view, img::to_pixel(0));
-            break;
-        }
+        img::resize(state.map_view, state.screen.view);
 
         sdl::render_screen(state.screen);
 
