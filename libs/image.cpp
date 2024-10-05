@@ -109,7 +109,7 @@ namespace image
 
 namespace image
 {
-    static void scale_view(ImageView const& src, SubView const& dst)
+    static void scale_view_up(ImageView const& src, SubView const& dst)
     {
         assert(dst.width % src.width == 0);
         assert(dst.height % src.height == 0);
@@ -129,6 +129,60 @@ namespace image
                 sub = sub_view(dst, rect);
 
                 fill(sub, p);
+
+                rect.x_begin += ws;
+                rect.x_end += ws;
+            }
+
+            rect.x_begin = 0;
+            rect.x_end = ws;
+            rect.y_begin += hs;
+            rect.y_end += hs;
+        }
+    }
+
+
+    static void scale_view_down(ImageView const& src, SubView const& dst)
+    {
+        assert(src.width % dst.width == 0);
+        assert(src.height % dst.height == 0);
+
+        auto ws = src.width / dst.width;
+        auto hs = src.width / dst.width;
+
+        auto rect = make_rect(ws, hs);
+        auto sub = sub_view(src, rect);
+
+        auto const dst_color = [&]()
+        {
+            sub = sub_view(src, rect);
+
+            u32 r = 0;
+            u32 g = 0;
+            u32 b = 0;
+            for (u32 y = 0; y < sub.height; y++)
+            {
+                auto row = row_begin(sub, y);
+                for (u32 x = 0; x < sub.width; x++)
+                {
+                    auto p = row[x];
+                    r += p.red;
+                    g += p.green;
+                    b += p.blue;
+                }
+            }
+
+            auto n = sub.width * sub.height;
+
+            return to_pixel((u8)(r / n), (u8)(g / n), (u8)(b / n));
+        };
+
+        for (u32 y = 0; y < dst.height; y++)
+        {
+            auto row = row_begin(dst, y);
+            for (u32 x = 0; x < dst.width; x++)
+            {
+                row[x] = dst_color();
 
                 rect.x_begin += ws;
                 rect.x_end += ws;

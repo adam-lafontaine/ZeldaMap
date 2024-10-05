@@ -10,15 +10,15 @@ namespace img = image;
 
 using FileList = std::vector<fs::path>;
 
-constexpr auto WATCH_DIR = "";
+constexpr auto WATCH_DIR = "D:\\NES\\fceux\\snaps";
 
 constexpr u32 MAP_WIDTH = 16;
 constexpr u32 MAP_HEIGHT = 8;
 
-constexpr u32 IMAGE_WIDTH = 10;
-constexpr u32 IMAGE_HEIGHT = 10;
+constexpr u32 IMAGE_WIDTH = 256;
+constexpr u32 IMAGE_HEIGHT = 168;
 
-constexpr u32 SCREEN_SCALE = 2;
+constexpr u32 SCREEN_DOWN_SCALE = 4;
 
 constexpr f64 NANO = 1'000'000'000;
 
@@ -37,6 +37,7 @@ enum class RunState : int
 class AppState
 {
 public:
+    fs::path watch_dir;
     FileList image_list;
     img::Image map_image;
     img::ImageView map_view;
@@ -166,6 +167,13 @@ static void process_user_input()
 
 static bool main_init()
 {
+    state.watch_dir = fs::path(WATCH_DIR);
+    if (!fs::exists(state.watch_dir) || !fs::is_directory(state.watch_dir))
+    {
+        sdl::print_message("No image directory");
+        return false;
+    }
+    
     state.image_list.reserve(MAP_WIDTH * MAP_HEIGHT);
 
     auto map_w = MAP_WIDTH * IMAGE_WIDTH;
@@ -178,8 +186,8 @@ static bool main_init()
 
     state.map_view = img::make_view(state.map_image);
 
-    auto screen_w = map_w * SCREEN_SCALE;
-    auto screen_h = map_h * SCREEN_SCALE;
+    auto screen_w = map_w / SCREEN_DOWN_SCALE;
+    auto screen_h = map_h / SCREEN_DOWN_SCALE;
 
     if (!sdl::create_screen_memory(state.screen, "Zelda Map", screen_w, screen_h))
     {
