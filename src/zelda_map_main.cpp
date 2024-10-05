@@ -1,5 +1,6 @@
 #include "../libs/sdl_include.hpp"
 #include "../libs/stopwatch.hpp"
+#include "settings.hpp"
 
 #include <filesystem>
 #include <thread>
@@ -11,22 +12,17 @@ namespace fs = std::filesystem;
 namespace img = image;
 
 
-constexpr auto WATCH_DIR = "D:\\NES\\fceux\\snaps";
-constexpr auto MAP_SAVE_PATH = "./zelda_map.png";
-
 constexpr u32 MAP_WIDTH = 16;
 constexpr u32 MAP_HEIGHT = 8;
 
-constexpr u32 IMAGE_WIDTH = 256;
-constexpr u32 IMAGE_HEIGHT = 168;
+constexpr u32 GAME_SCREEN_WIDTH = 256;
+constexpr u32 GAME_SCREEN_HEIGHT = 168;
 
 constexpr f32 SCREEN_SCALE = 0.4f;
 
 constexpr f64 NANO = 1'000'000'000;
-
 constexpr f64 TARGET_FRAMERATE_HZ = 60.0;
 constexpr f64 TARGET_NS_PER_FRAME = NANO / TARGET_FRAMERATE_HZ;
-
 
 
 enum class FileState : int
@@ -72,11 +68,11 @@ static bool write_map(img::ImageView const& src, img::ImageView const& map)
     x = (x - 1) / 4;
     y /= 4;
 
-    auto r = img::make_rect(x * IMAGE_WIDTH, y * IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
+    auto r = img::make_rect(x * GAME_SCREEN_WIDTH, y * GAME_SCREEN_HEIGHT, GAME_SCREEN_WIDTH, GAME_SCREEN_HEIGHT);
 
     auto dst = img::sub_view(map, r);
 
-    r = img::make_rect(0, src.height - IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
+    r = img::make_rect(0, src.height - GAME_SCREEN_HEIGHT, GAME_SCREEN_WIDTH, GAME_SCREEN_HEIGHT);
 
     img::copy(img::sub_view(src, r), dst);
 
@@ -99,6 +95,11 @@ static bool update_map(fs::path const& parent_dir, FileList& image_list, img::Im
         state = FileState::Existing;
 
         auto full_path = parent_dir / path;
+
+        if (full_path.filename() == fs::path(MAP_SAVE_PATH).filename())
+        {
+            continue;
+        }
 
         if (!img::read_image_from_file(full_path.generic_string().c_str(), image))
         {
@@ -356,7 +357,7 @@ static bool open_watch_directory()
     state.watch_dir = fs::path(WATCH_DIR);
     if (!fs::exists(state.watch_dir) || !fs::is_directory(state.watch_dir))
     {
-        sdl::print_message("No image directory");
+        sdl::display_error("Image directory could not be found");
         return false;
     }
 
@@ -384,22 +385,19 @@ static bool load_map()
 {
     if (!fs::exists(MAP_SAVE_PATH))
     {
-        assert("*** No map ***" && false);
         return false;
     }
 
     if (!img::read_image_from_file(MAP_SAVE_PATH, state.map_image))
     {
-        assert("*** read failed ***" && false);
         return false;
     }
 
-    auto map_w = MAP_WIDTH * IMAGE_WIDTH;
-    auto map_h = MAP_HEIGHT * IMAGE_HEIGHT;
+    auto map_w = MAP_WIDTH * GAME_SCREEN_WIDTH;
+    auto map_h = MAP_HEIGHT * GAME_SCREEN_HEIGHT;
 
     if (state.map_image.width != map_w || state.map_image.height != map_h)
     {
-        assert("*** Bad dims ***" && false);
         img::destroy_image(state.map_image);
         return false;
     }
@@ -417,8 +415,8 @@ static bool main_init()
         return false;
     }
 
-    auto map_w = MAP_WIDTH * IMAGE_WIDTH;
-    auto map_h = MAP_HEIGHT * IMAGE_HEIGHT;
+    auto map_w = MAP_WIDTH * GAME_SCREEN_WIDTH;
+    auto map_h = MAP_HEIGHT * GAME_SCREEN_HEIGHT;
 
     if (!load_map())
     {

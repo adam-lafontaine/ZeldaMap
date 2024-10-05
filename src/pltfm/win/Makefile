@@ -2,8 +2,8 @@ GPP := g++
 
 GPP += -std=c++20
 GPP += -mavx
-#GPP += -O3
-#GPP += -DNDEBUG
+GPP += -O3
+GPP += -DNDEBUG
 GPP += -mwindows
 
 # directories
