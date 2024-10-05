@@ -26,6 +26,55 @@ constexpr f64 TARGET_FRAMERATE_HZ = 60.0;
 constexpr f64 TARGET_NS_PER_FRAME = NANO / TARGET_FRAMERATE_HZ;
 
 
+namespace map
+{
+    static Rect2Du32 get_map_location(img::ImageView const& view)
+    {
+        // mini-map at top of screen
+        Rect2Du32 rm{};
+        rm.x_begin = 16;
+        rm.x_end = rm.x_begin + 64;
+        rm.y_begin = 16;
+        rm.y_end = rm.y_begin + 32;
+
+        auto vm = img::sub_view(view, rm);
+
+        u32 x = 0;
+        u32 y = 0;
+        bool found = false;
+        for (; y < vm.height && !found; y++)
+        {
+            auto row = img::row_begin(vm, y);
+            for (; x < vm.width && !found; x++)
+            {
+                found = row[x].green > 200;
+            }
+        }
+
+        x = (x - 1) / 4;
+        y /= 4;
+
+        return img::make_rect(x * IMAGE_WIDTH, y * IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
+    }
+
+
+    static void update_map(img::ImageView const& src, img::ImageView const& map)
+    {
+        auto dst = img::sub_view(map, get_map_location(src));
+
+        auto r = img::make_rect(0, src.height - IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_HEIGHT);
+
+        img::copy(img::sub_view(src, r), dst);
+    }
+
+
+    static void scan_dir()
+    {
+
+    }
+}
+
+
 enum class RunState : int
 {
     Start = 0,

@@ -2,6 +2,12 @@
 
 #include "image.hpp"
 
+#define IMAGE_READ
+#define IMAGE_WRITE
+#define IMAGE_RESIZE
+#include "stb_image/stb_image_options.hpp"
+
+
 #include <cstdlib>
 #include <cassert>
 
@@ -76,6 +82,28 @@ namespace image
 }
 
 
+/* copy */
+
+namespace image
+{
+    void copy(SubView const& src, SubView const& dst)
+    {
+        assert(src.width == dst.width);
+        assert(src.height == dst.height);
+
+        for (u32 y = 0; y < src.height; y++)
+        {
+            auto s = row_begin(src, y);
+            auto d = row_begin(dst, y);
+            for (u32 x = 0; x < src.width; x++)
+            {
+                d[x] = s[x];
+            }
+        }
+    }
+}
+
+
 /* fill */
 
 namespace image
@@ -105,93 +133,123 @@ namespace image
 }
 
 
-/* scale */
+/* read, write, resize */
 
 namespace image
 {
-    static void scale_view_up(ImageView const& src, SubView const& dst)
+    static bool has_extension(const char* filename, const char* ext)
     {
-        assert(dst.width % src.width == 0);
-        assert(dst.height % src.height == 0);
+        size_t file_length = std::strlen(filename);
+        size_t ext_length = std::strlen(ext);
 
-        auto ws = dst.width / src.width;
-        auto hs = dst.height / src.height;
-
-        auto rect = make_rect(ws, hs);
-        auto sub = sub_view(dst, rect);
-
-        for (u32 y = 0; y < src.height; y++)
-        {
-            auto row = row_begin(src, y);
-            for (u32 x = 0; x < src.width; x++)
-            {
-                auto p = row[x];
-                sub = sub_view(dst, rect);
-
-                fill(sub, p);
-
-                rect.x_begin += ws;
-                rect.x_end += ws;
-            }
-
-            rect.x_begin = 0;
-            rect.x_end = ws;
-            rect.y_begin += hs;
-            rect.y_end += hs;
-        }
+        return !std::strcmp(&filename[file_length - ext_length], ext);
     }
 
 
-    static void scale_view_down(ImageView const& src, SubView const& dst)
+    static bool is_bmp(const char* filename)
     {
-        assert(src.width % dst.width == 0);
-        assert(src.height % dst.height == 0);
-
-        auto ws = src.width / dst.width;
-        auto hs = src.width / dst.width;
-
-        auto rect = make_rect(ws, hs);
-        auto sub = sub_view(src, rect);
-
-        auto const dst_color = [&]()
-        {
-            sub = sub_view(src, rect);
-
-            u32 r = 0;
-            u32 g = 0;
-            u32 b = 0;
-            for (u32 y = 0; y < sub.height; y++)
-            {
-                auto row = row_begin(sub, y);
-                for (u32 x = 0; x < sub.width; x++)
-                {
-                    auto p = row[x];
-                    r += p.red;
-                    g += p.green;
-                    b += p.blue;
-                }
-            }
-
-            auto n = sub.width * sub.height;
-
-            return to_pixel((u8)(r / n), (u8)(g / n), (u8)(b / n));
-        };
-
-        for (u32 y = 0; y < dst.height; y++)
-        {
-            auto row = row_begin(dst, y);
-            for (u32 x = 0; x < dst.width; x++)
-            {
-                row[x] = dst_color();
-
-                rect.x_begin += ws;
-                rect.x_end += ws;
-            }
-
-            rect.x_begin = 0;
-            rect.x_end = ws;
-            rect.y_begin += hs;
-            rect.y_end += hs;
-        }
+        return has_extension(filename, ".bmp") || has_extension(filename, ".BMP");
     }
+
+
+    static bool is_png(const char* filename)
+    {
+        return has_extension(filename, ".png") || has_extension(filename, ".PNG");
+    }
+
+
+    bool read_image_from_file(const char* img_path_src, Image& image_dst)
+	{
+		int width = 0;
+		int height = 0;
+		int image_channels = 0;
+		int desired_channels = 4;
+
+		auto data = (Pixel*)stbi_load(img_path_src, &width, &height, &image_channels, desired_channels);
+
+		assert(data);
+		assert(width);
+		assert(height);
+
+		if (!data)
+		{
+			return false;
+		}
+
+		image_dst.data_ = data;
+		image_dst.width = width;
+		image_dst.height = height;
+
+		return true;
+	}
+
+
+    bool write_to_file(ImageView const& image_src, const char* file_path_dst)
+	{
+		assert(image_src.width);
+		assert(image_src.height);
+		assert(image_src.matrix_data_);
+
+		int width = (int)(image_src.width);
+		int height = (int)(image_src.height);
+		int channels = 4;
+		auto const data = image_src.matrix_data_;
+
+		int result = 0;
+
+		if(is_bmp(file_path_dst))
+		{
+			result = stbi_write_bmp(file_path_dst, width, height, channels, data);
+			assert(result && " *** stbi_write_bmp() failed *** ");
+		}
+		else if(is_png(file_path_dst))
+		{
+			int stride_in_bytes = width * channels;
+
+			result = stbi_write_png(file_path_dst, width, height, channels, data, stride_in_bytes);
+			assert(result && " *** stbi_write_png() failed *** ");
+		}
+		else
+		{
+			assert(false && " *** not a valid image format *** ");
+		}
+
+		return (bool)result;
+	}
+
+
+    bool resize(ImageView const& image_src, ImageView& image_dst)
+	{
+		assert(image_src.width);
+		assert(image_src.height);
+		assert(image_src.matrix_data_);
+		assert(image_dst.width);
+		assert(image_dst.height);
+
+		int channels = 4;
+
+		auto layout = stbir_pixel_layout::STBIR_RGBA;
+
+		int width_src = (int)(image_src.width);
+		int height_src = (int)(image_src.height);
+		int stride_bytes_src = width_src * channels;
+
+		int width_dst = (int)(image_dst.width);
+		int height_dst = (int)(image_dst.height);
+		int stride_bytes_dst = width_dst * channels;
+
+		auto data = stbir_resize_uint8_linear(
+			(u8*)image_src.matrix_data_, width_src, height_src, stride_bytes_src,
+			(u8*)image_dst.matrix_data_, width_dst, height_dst, stride_bytes_dst,
+			layout);
+
+		assert(data && " *** resize_image failed *** ");
+
+		if (!image_dst.matrix_data_)
+		{
+			image_dst.matrix_data_ = (Pixel*)data;
+		}
+
+		return (bool)data;
+	}
 }
