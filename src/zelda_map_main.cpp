@@ -2,13 +2,17 @@
 #include "../libs/stopwatch.hpp"
 
 #include <filesystem>
-#include <vector>
 #include <thread>
+#include <vector>
+#include <unordered_map>
+#include <cstdio>
+#include <cassert>
 
 namespace fs = std::filesystem;
 namespace img = image;
 
-using FileList = std::vector<fs::path>;
+//using FileList = std::vector<fs::path>;
+using FileList = std::unordered_map<fs::path, int>;
 
 constexpr auto WATCH_DIR = "D:\\NES\\fceux\\snaps";
 
@@ -68,9 +72,46 @@ namespace map
     }
 
 
-    static void scan_dir()
-    {
+    static void scan_dir(fs::path const& dir, FileList& image_list)
+    { 
+        static int scan_id = 0;
 
+        auto const is_png = [&](fs::path const& entry)
+        {
+            return fs::is_regular_file(entry) &&
+                entry.has_extension() &&
+                entry.extension() == ".png";
+        };
+
+
+        for (auto const& entry : fs::directory_iterator(dir))
+        {
+            if (!is_png(entry))
+            {
+                continue;
+            }
+
+            if (!image_list.contains(entry) || image_list[entry] < 0)
+            {
+                image_list[entry] = scan_id;
+            }
+        }
+
+        for (auto& [path, id] : image_list)
+        {
+            if (!fs::exists(path))
+            {
+                id = -1;
+                continue;
+            }
+
+            if (id == scan_id)
+            {
+                //printf("%s\n", path.string().c_str());
+            }
+        }
+
+        ++scan_id;
     }
 }
 
@@ -266,6 +307,25 @@ static void main_loop()
     while (is_running())
     {
         process_user_input();
+
+        map::scan_dir(state.watch_dir, state.image_list);
+
+        int count = 0;
+        for (auto const& [path, id]: state.image_list)
+        {
+            count += id >= 0;
+        }
+
+        switch (count % 2)
+        {
+        case 0:
+            img::fill(state.screen.view, img::to_pixel(255));
+            break;
+
+        default:
+            img::fill(state.screen.view, img::to_pixel(0));
+            break;
+        }
 
         sdl::render_screen(state.screen);
 

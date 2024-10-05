@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <cassert>
+#include <cstring>
 
 
 namespace mem
