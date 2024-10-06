@@ -192,6 +192,16 @@ namespace image
 }
 
 
+/* copy */
+
+namespace image
+{
+    void copy(SubView const& src, ImageView const& dst);
+
+    void copy(SubView const& src, SubView const& dst);
+}
+
+
 /* fill */
 
 namespace image
@@ -202,9 +212,13 @@ namespace image
 }
 
 
-/* scale */
+/* read, write, resize */
 
 namespace image
 {
-    static void scale_view(ImageView const& src, SubView const& dst);
+    bool read_image_from_file(const char* img_path_src, Image& image_dst);
+
+    bool write_to_file(ImageView const& image_src, const char* file_path_dst);
+
+    bool resize(ImageView const& image_src, ImageView& image_dst);
 }
