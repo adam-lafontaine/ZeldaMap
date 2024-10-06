@@ -547,6 +547,7 @@ static bool main_init()
 
     if (!open_watch_directory(state))
     {
+        sdl::display_error("Could not open screenshot directory");
         return false;
     }
 
@@ -555,8 +556,9 @@ static bool main_init()
 
     if (!load_map())
     {
-        if (state.map_image.create(map_w, map_h))
+        if (!state.map_image.create(map_w, map_h))
         {
+            sdl::display_error("Could not create map image");
             return false;
         }
 
@@ -569,6 +571,7 @@ static bool main_init()
 
     if (!sdl::create_screen_memory(state.screen, "Zelda Map", screen_w, screen_h))
     {
+        sdl::display_error("Error creating window");
         return false;
     }
 
