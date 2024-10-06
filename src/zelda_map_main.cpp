@@ -1,6 +1,5 @@
 #include "../libs/sdl_include.hpp"
 #include "../libs/stopwatch.hpp"
-#include "settings.hpp"
 
 #include <filesystem>
 #include <thread>
@@ -24,8 +23,53 @@ constexpr f64 NANO = 1'000'000'000;
 constexpr f64 TARGET_FRAMERATE_HZ = 60.0;
 constexpr f64 TARGET_NS_PER_FRAME = NANO / TARGET_FRAMERATE_HZ;
 
+constexpr auto DEFAULT_WATCH_DIR = "./";
+constexpr auto DEFAULT_MAP_SAVE_PATH = "./zelda_map.png";
+constexpr auto SETTINGS_FILE_EXT = ".ini";
 
-enum class FileState : int
+
+class Image
+{
+public:
+    img::Image image;
+
+    u32 width() { return image.width; }
+    u32 height() { return image.height; }
+
+    bool create(u32 width, u32 height) { return img::create_image(image, width, height); }
+
+    void destroy() { img::destroy_image(image); }
+
+    bool read(fs::path const& path) { return img::read_image_from_file(path.generic_string().c_str(), image); }
+
+    bool write(fs::path const& path) { return img::write_to_file(img::make_view(image), path.generic_string().c_str()); }
+
+    img::ImageView view() { return img::make_view(image); }
+
+    ~Image() { destroy(); }
+};
+
+
+class AppSettings
+{
+public:
+    fs::path watch_dir;
+    fs::path map_save_path;
+};
+
+
+AppSettings load_app_settings()
+{
+    AppSettings s{};
+
+    s.watch_dir = fs::path(DEFAULT_WATCH_DIR);
+    s.map_save_path = fs::path(DEFAULT_MAP_SAVE_PATH);
+
+    return s;
+}
+
+
+enum class FileStatus : int
 {
     New = 0,
     Existing,
@@ -33,7 +77,49 @@ enum class FileState : int
 };
 
 
-using FileList = std::unordered_map<fs::path, FileState>;
+using FileList = std::unordered_map<fs::path, FileStatus>;
+
+
+enum class RunState : int
+{
+    Start = 0,
+    Running,
+    End
+};
+
+
+class AppState
+{
+public:
+    AppSettings settings;
+
+    HANDLE h_watch_dir;
+
+    FileList image_list;
+
+    Image map_image;
+    //img::Image map_image;
+    img::ImageView map_view;
+    
+    sdl::ScreenMemory screen;
+
+    RunState run_state;
+};
+
+
+static AppState state;
+
+
+static bool is_running()
+{
+    return state.run_state == RunState::Running;
+}
+
+
+static void end_program()
+{
+    state.run_state = RunState::End;
+}
 
 
 static bool write_map(img::ImageView const& src, img::ImageView const& map)
@@ -80,78 +166,64 @@ static bool write_map(img::ImageView const& src, img::ImageView const& map)
 }
 
 
-static bool update_map(fs::path const& parent_dir, FileList& image_list, img::ImageView const& map)
+static bool update_map(AppSettings const& settings, FileList& image_list, img::ImageView const& map)
 {
     bool update = false;
-
-    img::Image image;
     for (auto& [path, state] : image_list)
     {
-        if (state != FileState::New)
+        if (state != FileStatus::New)
         {
             continue;
         }
 
-        state = FileState::Existing;
+        state = FileStatus::Existing;
 
-        auto full_path = parent_dir / path;
-
-        if (full_path.filename() == fs::path(MAP_SAVE_PATH).filename())
+        if (path.filename() == settings.map_save_path.filename())
         {
             continue;
         }
 
-        if (!img::read_image_from_file(full_path.generic_string().c_str(), image))
+        auto full_path = settings.watch_dir / path;
+
+        Image image;
+
+        if (!image.read(full_path))
         {
             continue;
         }
 
-        update |= write_map(img::make_view(image), map);
-
-        img::destroy_image(image);
+        update |= write_map(image.view(), map);
     }
 
     return update;
-}    
-
-
-
-enum class RunState : int
-{
-    Start = 0,
-    Running,
-    End
-};
-
-
-class AppState
-{
-public:
-    fs::path watch_dir;
-    HANDLE watch_dir_h;
-
-    FileList image_list;
-    img::Image map_image;
-    img::ImageView map_view;
-    
-    sdl::ScreenMemory screen;
-
-    RunState run_state;
-};
-
-
-static AppState state;
-
-
-static bool is_running()
-{
-    return state.run_state == RunState::Running;
 }
 
 
-static void end_program()
+static bool open_watch_directory(AppState& state)
 {
-    state.run_state = RunState::End;
+    if (!fs::exists(state.settings.watch_dir) || !fs::is_directory(state.settings.watch_dir))
+    {
+        sdl::display_error("Image directory could not be found");
+        return false;
+    }
+
+    auto dir_w = state.settings.watch_dir.wstring();
+
+    state.h_watch_dir = CreateFileW(
+        dir_w.c_str(),
+        FILE_LIST_DIRECTORY,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,
+        OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
+        NULL);
+
+    if (state.h_watch_dir == INVALID_HANDLE_VALUE) 
+    {            
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -200,11 +272,11 @@ static void monitor_image_directory(HANDLE dir, FileList& image_list)
                     switch (event->Action) 
                     {
                     case FILE_ACTION_ADDED: {
-                        image_list[path] = FileState::New;
+                        image_list[path] = FileStatus::New;
                         } break;
 
                     case FILE_ACTION_REMOVED: {
-                        image_list[path] = FileState::Deleted;
+                        image_list[path] = FileStatus::Deleted;
                         } break;
 
                         /*case FILE_ACTION_MODIFIED: {
@@ -254,7 +326,7 @@ static void monitor_image_directory(HANDLE dir, FileList& image_list)
 
 static void save_map()
 {
-    img::write_to_file(state.map_view, MAP_SAVE_PATH);
+    state.map_image.write(state.settings.map_save_path);
 }
 
 
@@ -352,43 +424,14 @@ static void process_user_input()
 }
 
 
-static bool open_watch_directory()
-{
-    state.watch_dir = fs::path(WATCH_DIR);
-    if (!fs::exists(state.watch_dir) || !fs::is_directory(state.watch_dir))
-    {
-        sdl::display_error("Image directory could not be found");
-        return false;
-    }
-
-    auto dir_w = state.watch_dir.wstring();
-
-    state.watch_dir_h = CreateFileW(
-        dir_w.c_str(),
-        FILE_LIST_DIRECTORY,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        NULL,
-        OPEN_EXISTING,
-        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED,
-        NULL);
-
-    if (state.watch_dir_h == INVALID_HANDLE_VALUE) 
-    {            
-        return false;
-    }
-
-    return true;
-}
-
-
 static bool load_map()
 {
-    if (!fs::exists(MAP_SAVE_PATH))
+    if (!fs::exists(state.settings.map_save_path))
     {
         return false;
     }
 
-    if (!img::read_image_from_file(MAP_SAVE_PATH, state.map_image))
+    if (!state.map_image.read(state.settings.map_save_path))
     {
         return false;
     }
@@ -396,13 +439,13 @@ static bool load_map()
     auto map_w = MAP_WIDTH * GAME_SCREEN_WIDTH;
     auto map_h = MAP_HEIGHT * GAME_SCREEN_HEIGHT;
 
-    if (state.map_image.width != map_w || state.map_image.height != map_h)
+    if (state.map_image.width() != map_w || state.map_image.height() != map_h)
     {
-        img::destroy_image(state.map_image);
+        state.map_image.destroy();
         return false;
     }
 
-    state.map_view = img::make_view(state.map_image);    
+    state.map_view = state.map_image.view();
 
     return true;
 }
@@ -410,7 +453,9 @@ static bool load_map()
 
 static bool main_init()
 {
-    if (!open_watch_directory())
+    state.settings = load_app_settings();
+
+    if (!open_watch_directory(state))
     {
         return false;
     }
@@ -420,12 +465,12 @@ static bool main_init()
 
     if (!load_map())
     {
-        if (!img::create_image(state.map_image, map_w, map_h))
+        if (state.map_image.create(map_w, map_h))
         {
             return false;
         }
 
-        state.map_view = img::make_view(state.map_image);
+        state.map_view = state.map_image.view();
         img::fill(state.map_view, img::to_pixel(0));
     }
 
@@ -447,8 +492,7 @@ static bool main_init()
 static void main_close()
 {
     save_map();
-    CloseHandle(state.watch_dir_h);
-    img::destroy_image(state.map_image);
+    CloseHandle(state.h_watch_dir);
     sdl::destroy_screen_memory(state.screen);
 }
 
@@ -457,7 +501,7 @@ static void main_loop()
 {
     auto const monitor_images = []()
     {
-        monitor_image_directory(state.watch_dir_h, state.image_list);
+        monitor_image_directory(state.h_watch_dir, state.image_list);
     };
 
     std::thread th(monitor_images);
@@ -469,7 +513,7 @@ static void main_loop()
     {
         process_user_input();
 
-        if (update_map(state.watch_dir, state.image_list, state.map_view))
+        if (update_map(state.settings, state.image_list, state.map_view))
         {
             img::resize(state.map_view, state.screen.view);
         }
