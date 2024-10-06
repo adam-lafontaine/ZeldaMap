@@ -5,10 +5,15 @@
 #include <thread>
 #include <unordered_map>
 #include <cassert>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <windows.h>
 
 namespace fs = std::filesystem;
 namespace img = image;
+
+using Str = std::string;
 
 
 constexpr u32 MAP_WIDTH = 16;
@@ -24,8 +29,12 @@ constexpr f64 TARGET_FRAMERATE_HZ = 60.0;
 constexpr f64 TARGET_NS_PER_FRAME = NANO / TARGET_FRAMERATE_HZ;
 
 constexpr auto DEFAULT_WATCH_DIR = "./";
-constexpr auto DEFAULT_MAP_SAVE_PATH = "./zelda_map.png";
+constexpr auto DEFAULT_MAP_SAVE_DIR = "./";
+constexpr auto MAP_FILE_NAME = "zelda_map.png";
+
 constexpr auto SETTINGS_FILE_EXT = ".ini";
+constexpr auto SETTINGS_WATCH_DIR_KEY = "SCREENSHOT_DIRECTORY";
+constexpr auto SETTINGS_MAP_SAVE_DIR_KEY = "SAVE_DIRECTORY";
 
 
 class Image
@@ -58,12 +67,84 @@ public:
 };
 
 
+static void create_app_settings_file()
+{
+
+}
+
+
 AppSettings load_app_settings()
 {
     AppSettings s{};
 
     s.watch_dir = fs::path(DEFAULT_WATCH_DIR);
-    s.map_save_path = fs::path(DEFAULT_MAP_SAVE_PATH);
+    s.map_save_path = fs::path(DEFAULT_MAP_SAVE_DIR) / MAP_FILE_NAME;
+
+    fs::path ini;
+    bool found = false;
+    auto dir = fs::current_path();
+    for (auto const& entry : fs::directory_iterator(dir))
+    {
+        auto p = fs::path(entry);
+        if (fs::is_regular_file(p) && p.extension() == SETTINGS_FILE_EXT)
+        {
+            ini = p;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found)
+    {
+        create_app_settings_file();
+        return s;
+    }
+
+    std::ifstream file(ini);
+    if (!file.is_open())
+    {
+        return s;
+    }
+
+    auto trim = [](Str const& str)
+    {
+        auto first = str.find_first_not_of(" \t");
+        auto last = str.find_last_not_of(" \t");
+        return str.substr(first, (last - first + 1));
+    };
+
+    Str line;
+    while (std::getline(file, line))
+    {
+        if (line.empty() || line[0] == ';' || line[0] == '#')
+        {
+            continue;
+        }
+
+        auto pos = line.find('=');
+        if (pos == std::string::npos)
+        {
+            continue;
+        }
+
+        auto dir = fs::path(trim(line.substr(pos + 1)));
+        if (!fs::is_directory(dir))
+        {
+            continue;
+        }
+
+        auto key = trim(line.substr(0, pos));        
+        if (key == SETTINGS_WATCH_DIR_KEY)
+        {
+            s.watch_dir = dir;
+        }
+        else if (key == SETTINGS_MAP_SAVE_DIR_KEY)
+        {
+            s.map_save_path = dir / MAP_FILE_NAME;
+        }        
+    }
+
+    file.close();
 
     return s;
 }
@@ -98,7 +179,6 @@ public:
     FileList image_list;
 
     Image map_image;
-    //img::Image map_image;
     img::ImageView map_view;
     
     sdl::ScreenMemory screen;
