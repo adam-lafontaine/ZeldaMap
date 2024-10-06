@@ -69,7 +69,17 @@ public:
 
 static void create_app_settings_file()
 {
+    std::ostringstream oss;
 
+    oss << "# Directory where screenshots are stored\n";
+    oss << SETTINGS_WATCH_DIR_KEY << " = " << DEFAULT_WATCH_DIR << "\n\n";
+
+    oss << "# Directory where to save the generated map\n";
+    oss << SETTINGS_MAP_SAVE_DIR_KEY << " = " << DEFAULT_MAP_SAVE_DIR;
+
+    std::ofstream ini("./settings.ini");
+    ini << oss.str();
+    ini.close();
 }
 
 
