@@ -233,7 +233,7 @@ static bool write_map(img::ImageView const& src, img::ImageView const& map)
         {
             // first pixel that is not gray
             auto p = row[x];
-            found = p.red != p.green && p.red != p.blue;
+            found = p.red != p.green && p.red != p.blue && p.red > 0;
         }
     }
 
